@@ -6,6 +6,7 @@ import { tokenValidator } from '../middleware/tokenValidator'
 import User from '../models/User';
 import Post from "../models/Post";
 import Notification from "../models/Notifications"
+import Follower from "../models/Follower"
 
 const user = Router();
 user.use(tokenValidator);
@@ -71,10 +72,64 @@ user.post("/post", async (req: Request, res: Response) => {
 user.get("/notifications", async (req: Request, res: Response) => {
     const id = res.locals.user_id
     try {
-        const notifications = await Notification.find({ user: id })
+        const notifications: any = await Notification.findById({ user: id }).exec();
         notifications.length !== 0
             ? res.status(200).json(notifications)
             : res.status(404).json({ message: "No notifications at the moment!" })
+    } catch (error) {
+        console.log(error)
+        res.status(501).json({ message: "Something went wrong!" })
+    }
+})
+
+/*GET ALL FOLLOWERS */
+user.get("/followers", async (req: Request, res: Response) => {
+    const id = res.locals.user_id;
+    try {
+        const followers: any = await Follower.find({ following: id }).exec();
+        followers.length !== 0
+            ? res.status(200).json(followers)
+            : res.status(404).json({ message: "No followers found!" })
+    } catch (error) {
+        console.log(error)
+        res.status(501).json({ message: "Something went wrong!" })
+    }
+})
+
+/*GET ALL FOLLOWING ACCOUNTS */
+user.get("/following", async (req: Request, res: Response) => {
+    const id = res.locals.user_id;
+    try {
+        const following: any = await Follower.find({ user: id }).exec();
+        following.length !== 0
+            ? res.status(200).json(following)
+            : res.status(404).json({ message: "No followers found!" })
+    } catch (error) {
+        console.log(error)
+        res.status(501).json({ message: "Something went wrong!" })
+    }
+})
+
+/*FOLLOW AN USER */
+user.post("/follow", async (req: Request, res: Response) => {
+    const id = res.locals.user_id;
+    const { user_id } = req.body
+    try {
+        const follow = new Follower({ user: id, following: user_id })
+        await follow.save()
+        res.status(201).json({ message: `Started following!` })
+    } catch (error) {
+        console.log(error)
+        res.status(501).json({ message: "Something went wrong!" })
+    }
+})
+
+/*UNFOLLOW AN USER */
+user.post("/unfollow", async (req: Request, res: Response) => {
+    const { user_id } = req.body
+    try {
+        const unfollow = await Follower.findOneAndDelete({ following: user_id }).exec()
+        res.status(201).json({ message: "Unfollowed the following!" })
     } catch (error) {
         console.log(error)
         res.status(501).json({ message: "Something went wrong!" })
