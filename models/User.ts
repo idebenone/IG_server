@@ -1,5 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-
 interface User extends Document {
     name: string,
     email: string,

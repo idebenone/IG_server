@@ -1,5 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-
 interface Notification extends Document {
     user: mongoose.Types.ObjectId,
     type: number,
@@ -11,7 +10,6 @@ interface Notification extends Document {
     is_read: boolean,
     created_at: Date,
     modified_at: Date,
-
 }
 
 const notificationSchema = new Schema<Notification>({

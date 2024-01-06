@@ -1,5 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-
 interface Follower extends Document {
     user: mongoose.Types.ObjectId,
     following: mongoose.Types.ObjectId,

@@ -10,7 +10,6 @@ import post from './routes/Posts'
 const app: Express = express();
 const port = 3000;
 
-const CLOUD_DB_URI = "mongodb+srv://vin:HMeveSnTbQtu12AX@cluster0.egolzkh.mongodb.net/?retryWrites=true&w=majority";
 const DB_URI = "mongodb://localhost:27017"
 const options: ConnectOptions = {
     dbName: "ig",
