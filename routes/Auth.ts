@@ -27,7 +27,6 @@ auth.post("/login", async (req: Request, res: Response) => {
             res.status(404).json({ message: "User not found" })
         }
     } catch (error) {
-        console.log(error)
         res.status(501).json({ message: "Something went wrong" })
     }
 })
@@ -51,7 +50,6 @@ auth.post("/register", async (req: Request, res: Response) => {
             return res.status(404).json({ message: "Email already in use" });
         }
     } catch (error) {
-        console.log(error)
         res.status(501).json({ message: "Something went wrong" })
     }
 })
@@ -73,7 +71,6 @@ auth.post("/verify", async (req: Request, res: Response) => {
             res.status(201).json({ message: "Invalid OTP" })
         }
     } catch (error) {
-        console.log(error)
         res.status(501).json({ message: "Something went wrong" })
     }
 })
