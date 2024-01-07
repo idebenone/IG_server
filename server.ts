@@ -8,7 +8,7 @@ import user from './routes/User';
 import post from './routes/Posts'
 
 const app: Express = express();
-const port = 3000;
+const port = 3001;
 
 const DB_URI = "mongodb://localhost:27017"
 const options: ConnectOptions = {
