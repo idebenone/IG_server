@@ -15,6 +15,8 @@ auth.post("/login", async (req: Request, res: Response) => {
     if (!email || !password) res.status(422).json({ message: "Some parameters are missing" })
     try {
         const user: any = await User.find({ email }).exec();
+        if (user.length === 0) return res.status(404).json({ message: "User not found!" })
+
         const decryptedPass = await bcrypt.compare(password, user[0].password)
         if (user && decryptedPass) {
             const token = jwt.sign(
@@ -23,8 +25,6 @@ auth.post("/login", async (req: Request, res: Response) => {
                 { expiresIn: '1d' }
             );
             res.status(201).json({ token: token })
-        } else {
-            res.status(404).json({ message: "User not found" })
         }
     } catch (error) {
         res.status(501).json({ message: "Something went wrong" })

@@ -11,11 +11,11 @@ import { Types } from "mongoose";
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, './uploads'); // Destination folder for file storage
+        cb(null, './uploads');
     },
     filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, file.fieldname + '-' + uniqueSuffix); // File naming convention
+        const originalName = file.originalname + Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, originalName);
     }
 });
 const upload = multer({ storage: storage });
@@ -35,8 +35,9 @@ user.get("/", validateUserId, async (req: Request, res: Response) => {
         const user = await User.findById(res.locals.user_id)
             .select('-password -otp -__v -is_verified')
             .exec();
+        const posts = await Post.find({ user: res.locals.user_id })
         if (!user) return res.status(404).json({ message: "User not found" });
-        res.status(200).json(user);
+        res.status(200).json({ user: user, posts: posts });
     } catch (error) {
         console.error("Error fetching user profile:", error);
         res.status(500).json({ message: "Internal server error" });
@@ -61,11 +62,11 @@ user.post("/", validateUserId, async (req: Request, res: Response) => {
 })
 
 /* CREATE A NEW POST */
-user.post("/", upload.single('file'), validateUserId, async (req: Request, res: Response) => {
-    const { post_type, description, location } = req.body;
+user.post("/post", upload.single('file'), validateUserId, async (req: Request, res: Response) => {
+    const { post_type, caption, location } = req.body;
     const userId = res.locals.user_id;
     try {
-        const user = await User.findById(userId);
+        const user: any = await User.findById(userId);
         if (!user) return res.status(404).json({ message: "User not found" });
 
         let newPost;
@@ -73,25 +74,22 @@ user.post("/", upload.single('file'), validateUserId, async (req: Request, res: 
             newPost = new Post({
                 post_type,
                 user: user._id,
-                description,
+                caption,
                 location,
-                img: req.file ? req.file.path : undefined,
-                video: ""
+                img: req.file ? req.protocol + '://' + req.get('host') + '/uploads/' + req.file.filename : undefined,
             });
         } else {
             newPost = new Post({
                 post_type,
                 user: user._id,
-                description,
+                caption,
                 location,
-                img: "",
-                video: req.file ? req.file.path : undefined
+                video: req.file ? req.protocol + '://' + req.get('host') + '/uploads/' + req.file.filename : undefined
             });
         }
 
         await newPost.save();
-        user.posts.push(newPost._id);
-        await user.save();
+        await User.findByIdAndUpdate(userId, { posts_count: user.posts_count + 1 }).exec()
 
         res.status(201).json({ message: "Post created successfully", post: newPost });
     } catch (error) {
@@ -124,17 +122,17 @@ user.post("/follow/:userId", validateUserId, async (req: Request, res: Response)
         if (currentUserId === userId) return res.status(400).json({ message: "Cannot follow yourself" });
 
         const userObjectId = new Types.ObjectId(userId);
-        const currentUser = await User.findById(currentUserId);
-        const userToFollow = await User.findById(userObjectId);
+        const currentUser: any = await User.findById(currentUserId);
+        const userToFollow: any = await User.findById(userObjectId);
 
         if (!currentUser || !userToFollow) return res.status(404).json({ message: "User not found" });
-        if (currentUser.following.includes(userObjectId)) return res.status(400).json({ message: "Already following this user" });
 
-        currentUser.following.push(userObjectId);
-        userToFollow.followers.push(currentUserId);
+        const follower = new User({ user: currentUserId, follower: userObjectId });
+        await follower.save();
 
-        await currentUser.save();
-        await userToFollow.save();
+        await User.findByIdAndUpdate(currentUserId, { following_count: currentUser.following_count + 1 }).exec();
+        await User.findByIdAndUpdate(userObjectId, { followers_count: userToFollow.followers_count + 1 }).exec();
+
         res.status(200).json({ message: "Successfully followed user" });
     } catch (error) {
         console.log(error);
@@ -155,13 +153,10 @@ user.post("/unfollow/:userId", validateUserId, async (req: Request, res: Respons
         const userToUnfollow = await User.findById(userObjectId);
 
         if (!currentUser || !userToUnfollow) return res.status(404).json({ message: "User not found" });
-        if (!currentUser.following.includes(userObjectId)) return res.status(400).json({ message: "Not following this user" });
 
-        currentUser.following = currentUser.following.filter(followedUserId => followedUserId !== userObjectId);
-        userToUnfollow.followers = userToUnfollow.followers.filter(followerUserId => followerUserId !== currentUserId);
+        await User.findByIdAndUpdate(currentUserId, { following_count: currentUser.following_count - 1 }).exec();
+        await User.findByIdAndUpdate(userObjectId, { followers_count: userToUnfollow.followers_count - 1 }).exec();
 
-        await currentUser.save();
-        await userToUnfollow.save();
         res.status(200).json({ message: "Successfully unfollowed user" });
     } catch (error) {
         console.log(error);
