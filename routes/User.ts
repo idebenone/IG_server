@@ -1,72 +1,102 @@
 import * as dotenv from "dotenv";
 dotenv.config();
 import { Router, Request, Response } from 'express';
-
+import multer from 'multer';
 import { tokenValidator } from '../middleware/tokenValidator'
 import User from '../models/User';
 import Post from "../models/Post";
 import Notification from "../models/Notifications"
-import Follower from "../models/Follower"
+import { Types } from "mongoose";
+
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, './uploads');
+    },
+    filename: (req, file, cb) => {
+        const originalName = file.originalname + Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, originalName);
+    }
+});
+const upload = multer({ storage: storage });
 
 const user = Router();
+
 user.use(tokenValidator);
+const validateUserId = (req: Request, res: Response, next: () => void) => {
+    const userId = res.locals.user_id;
+    if (!userId) return res.status(422).json({ message: "User ID is missing" });
+    next();
+};
 
 /* GET USER PROFILE */
-user.get("/", async (req: Request, res: Response) => {
-    const id = res.locals.user_id;
-    if (!id) res.status(401).json({ message: "Some parameters are missing" })
+user.get("/", validateUserId, async (req: Request, res: Response) => {
     try {
-        const user: any = await User.findById({ _id: id }).select('-password -otp -__v -is_verified').exec()
-        user.length !== 0
-            ? res.status(201).json(user)
-            : res.status(404).json({ message: "User not found!" })
+        const user = await User.findById(res.locals.user_id)
+            .select('-password -otp -__v -is_verified')
+            .exec();
+        const posts = await Post.find({ user: res.locals.user_id })
+        if (!user) return res.status(404).json({ message: "User not found" });
+        res.status(200).json({ user: user, posts: posts });
     } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
+        console.error("Error fetching user profile:", error);
+        res.status(500).json({ message: "Internal server error" });
     }
 })
 
 /* UPDATE USER PROFILE */
-user.post("/", async (req: Request, res: Response) => {
-    const id = res.locals.user_id;
+user.post("/", validateUserId, async (req: Request, res: Response) => {
     const { name } = req.body;
-    if (!id) res.status(401).json({ message: "Some parameters are missing" })
+    if (!name) return res.status(400).json({ message: "Name is required" });
     try {
-        const user: any = await User.findByIdAndUpdate(id, { name: name }, { new: true }).exec()
-        res.status(201).json({ message: "User has been updated" })
+        const updatedUser = await User.findByIdAndUpdate(
+            res.locals.user_id,
+            { name: name },
+            { new: true }
+        ).exec();
+        res.status(200).json({ message: "User profile updated", user: updatedUser });
     } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
-    }
-})
-
-/* GET ALL USER POSTS */
-user.get("/posts", async (req: Request, res: Response) => {
-    const id = res.locals.user_id
-    try {
-        const posts = await Post.find({ user: id })
-        posts.length !== 0
-            ? res.status(200).json(posts)
-            : res.status(404).json({ message: "No posts found!" })
-    } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
+        console.error("Error updating user profile:", error);
+        res.status(500).json({ message: "Internal server error" });
     }
 })
 
 /* CREATE A NEW POST */
-user.post("/post", async (req: Request, res: Response) => {
-    const id = res.locals.user_id
-    const { post_type, description, location, img, video } = req.body;
+user.post("/post", upload.single('file'), validateUserId, async (req: Request, res: Response) => {
+    const { post_type, caption, location } = req.body;
+    const userId = res.locals.user_id;
     try {
-        const post = new Post({ post_type, user: id, description, location, img, video })
-        await post.save()
-        res.status(201).json({ message: "Post created successfully" })
+        const user: any = await User.findById(userId);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        let newPost;
+        if (post_type == 1) {
+            newPost = new Post({
+                post_type,
+                user: user._id,
+                caption,
+                location,
+                img: req.file ? req.protocol + '://' + req.get('host') + '/uploads/' + req.file.filename : undefined,
+            });
+        } else {
+            newPost = new Post({
+                post_type,
+                user: user._id,
+                caption,
+                location,
+                video: req.file ? req.protocol + '://' + req.get('host') + '/uploads/' + req.file.filename : undefined
+            });
+        }
+
+        await newPost.save();
+        await User.findByIdAndUpdate(userId, { posts_count: user.posts_count + 1 }).exec()
+
+        res.status(201).json({ message: "Post created successfully", post: newPost });
     } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
+        console.error("Error creating a new post:", error);
+        res.status(500).json({ message: "Internal server error" });
     }
-})
+});
 
 /* GET USER NOTIFICATIONS */
 user.get("/notifications", async (req: Request, res: Response) => {
@@ -82,58 +112,56 @@ user.get("/notifications", async (req: Request, res: Response) => {
     }
 })
 
-/*GET ALL FOLLOWERS */
-user.get("/followers", async (req: Request, res: Response) => {
-    const id = res.locals.user_id;
-    try {
-        const followers: any = await Follower.find({ following: id }).exec();
-        followers.length !== 0
-            ? res.status(200).json(followers)
-            : res.status(404).json({ message: "No followers found!" })
-    } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
-    }
-})
+/* FOLLOW A USER */
+user.post("/follow/:userId", validateUserId, async (req: Request, res: Response) => {
+    const currentUserId = res.locals.user_id;
+    const { userId } = req.params;
 
-/*GET ALL FOLLOWING ACCOUNTS */
-user.get("/following", async (req: Request, res: Response) => {
-    const id = res.locals.user_id;
     try {
-        const following: any = await Follower.find({ user: id }).exec();
-        following.length !== 0
-            ? res.status(200).json(following)
-            : res.status(404).json({ message: "No followers found!" })
-    } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
-    }
-})
+        if (!Types.ObjectId.isValid(userId)) return res.status(400).json({ message: "Invalid user ID" });
+        if (currentUserId === userId) return res.status(400).json({ message: "Cannot follow yourself" });
 
-/*FOLLOW AN USER */
-user.post("/follow", async (req: Request, res: Response) => {
-    const id = res.locals.user_id;
-    const { user_id } = req.body
-    try {
-        const follow = new Follower({ user: id, following: user_id })
-        await follow.save()
-        res.status(201).json({ message: `Started following!` })
-    } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
-    }
-})
+        const userObjectId = new Types.ObjectId(userId);
+        const currentUser: any = await User.findById(currentUserId);
+        const userToFollow: any = await User.findById(userObjectId);
 
-/*UNFOLLOW AN USER */
-user.post("/unfollow", async (req: Request, res: Response) => {
-    const { user_id } = req.body
-    try {
-        const unfollow = await Follower.findOneAndDelete({ following: user_id }).exec()
-        res.status(201).json({ message: "Unfollowed the following!" })
+        if (!currentUser || !userToFollow) return res.status(404).json({ message: "User not found" });
+
+        const follower = new User({ user: currentUserId, follower: userObjectId });
+        await follower.save();
+
+        await User.findByIdAndUpdate(currentUserId, { following_count: currentUser.following_count + 1 }).exec();
+        await User.findByIdAndUpdate(userObjectId, { followers_count: userToFollow.followers_count + 1 }).exec();
+
+        res.status(200).json({ message: "Successfully followed user" });
     } catch (error) {
-        console.log(error)
-        res.status(501).json({ message: "Something went wrong!" })
+        console.log(error);
+        res.status(500).json({ message: "Something went wrong" });
     }
-})
+});
+
+/* UNFOLLOW A USER */
+user.post("/unfollow/:userId", validateUserId, async (req: Request, res: Response) => {
+    const currentUserId = res.locals.user_id;
+    const { userId } = req.params;
+
+    try {
+        if (!Types.ObjectId.isValid(userId)) return res.status(400).json({ message: "Invalid user ID" });
+
+        const userObjectId = new Types.ObjectId(userId);
+        const currentUser = await User.findById(currentUserId);
+        const userToUnfollow = await User.findById(userObjectId);
+
+        if (!currentUser || !userToUnfollow) return res.status(404).json({ message: "User not found" });
+
+        await User.findByIdAndUpdate(currentUserId, { following_count: currentUser.following_count - 1 }).exec();
+        await User.findByIdAndUpdate(userObjectId, { followers_count: userToUnfollow.followers_count - 1 }).exec();
+
+        res.status(200).json({ message: "Successfully unfollowed user" });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Something went wrong" });
+    }
+});
 
 export default user;
