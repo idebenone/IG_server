@@ -6,6 +6,7 @@ import { tokenValidator } from '../middleware/tokenValidator'
 import User from '../models/User';
 import Post from "../models/Post";
 import Notification from "../models/Notifications"
+import Follower from "../models/Follower"
 import { Types } from "mongoose";
 
 
@@ -36,6 +37,28 @@ user.get("/", validateUserId, async (req: Request, res: Response) => {
         const posts = await Post.find({ user: res.locals.user_id })
         if (!user) return res.status(404).json({ message: "User not found" });
         res.status(200).json({ user: user, posts: posts });
+    } catch (error) {
+        console.error("Error fetching user profile:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+})
+
+user.get("/profile/:id", validateUserId, async (req: Request, res: Response) => {
+    const id = req.params.id
+    try {
+        const user = await User.findById(id)
+            .select('-password -otp -__v -is_verified')
+            .exec();
+        const posts = await Post.find({ user: id })
+        const is_following = await Follower.find({ user: res.locals.user_id, follower: id })
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        let is_following_bol = false;
+        if (is_following.length != 0) {
+            is_following_bol = true;
+        }
+        res.status(200).json({ user: user, posts: posts, is_following: is_following_bol });
     } catch (error) {
         console.error("Error fetching user profile:", error);
         res.status(500).json({ message: "Internal server error" });
@@ -132,7 +155,7 @@ user.post("/follow/:userId", validateUserId, async (req: Request, res: Response)
         const currentUser: any = await User.findById(currentUserId);
         const userToFollow: any = await User.findById(userObjectId);
         if (!currentUser || !userToFollow) return res.status(404).json({ message: "User not found" });
-        const follower = new User({ user: currentUserId, follower: userObjectId });
+        const follower = new Follower({ user: currentUserId, follower: userObjectId });
         await follower.save()
         await User.findByIdAndUpdate(currentUserId, { following_count: currentUser.following_count + 1 }).exec();
         await User.findByIdAndUpdate(userObjectId, { followers_count: userToFollow.followers_count + 1 }).exec();
@@ -149,11 +172,16 @@ user.post("/unfollow/:userId", validateUserId, async (req: Request, res: Respons
     const { userId } = req.params;
 
     try {
-        if (!Types.ObjectId.isValid(userId)) return res.status(400).json({ message: "Invalid user ID" });
+        if (!Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ message: "Invalid user ID" });
+        }
         const userObjectId = new Types.ObjectId(userId);
         const currentUser = await User.findById(currentUserId);
         const userToUnfollow = await User.findById(userObjectId);
-        if (!currentUser || !userToUnfollow) return res.status(404).json({ message: "User not found" });
+        if (!currentUser || !userToUnfollow) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        await Follower.findOneAndDelete({ user: currentUserId, follower: userObjectId })
         await User.findByIdAndUpdate(currentUserId, { following_count: currentUser.following_count - 1 }).exec();
         await User.findByIdAndUpdate(userObjectId, { followers_count: userToUnfollow.followers_count - 1 }).exec();
         res.status(200).json({ message: "Successfully unfollowed user" });
