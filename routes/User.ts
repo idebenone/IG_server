@@ -8,6 +8,7 @@ import Post from "../models/Post";
 import Notification from "../models/Notifications"
 import Follower from "../models/Follower"
 import { Types } from "mongoose";
+import Comment from "../models/Comment";
 
 
 const storage = multer.diskStorage({
@@ -204,6 +205,40 @@ user.get("/search", validateUserId, async (req: Request, res: Response) => {
         return res.status(500).json({ message: 'Something went wrong' });
     }
 });
+
+user.post("/comment", validateUserId, async (req: Request, res: Response) => {
+    const { post, parent_comment, comment } = req.body;
+    try {
+        const findPost: any = await Post.find({ _id: post });
+        if (findPost.length !== 0) {
+            const newComment = new Comment({
+                user: res.locals.user_id,
+                post,
+                ...(parent_comment && { parent_comment }),
+                comment
+            })
+            await newComment.save();
+            res.status(201).json({ message: "Comment has been saved" })
+        }
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
+})
+
+user.get("/comment/:id", validateUserId, async (req: Request, res: Response) => {
+    const post = req.params.id;
+    try {
+        const comments: any = await Comment.find({ post }).populate('user', 'username profile_img').exec()
+        if (comments.length === 0) {
+            res.status(404).json({ message: "No comments found!" })
+        }
+        res.status(200).json(comments)
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
+})
 
 
 export default user;
