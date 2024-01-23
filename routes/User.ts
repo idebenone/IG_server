@@ -5,6 +5,7 @@ import multer from 'multer';
 import { tokenValidator } from '../middleware/tokenValidator'
 import User from '../models/User';
 import Post from "../models/Post";
+import Like from "../models/Like";
 import Notification from "../models/Notifications"
 import Follower from "../models/Follower"
 import { Types } from "mongoose";
@@ -36,8 +37,12 @@ user.get("/", validateUserId, async (req: Request, res: Response) => {
             .select('-password -otp -__v -is_verified')
             .exec();
         const posts = await Post.find({ user: res.locals.user_id })
+        const likedPosts = (await Like.find({ user: res.locals.user_id })).map(like => like.post.toString());
+        const postWithLikes = posts.map(post => {
+            return { ...post.toObject(), isLiked: likedPosts.includes(post._id.toString()) };
+        })
         if (!user) return res.status(404).json({ message: "User not found" });
-        res.status(200).json({ user: user, posts: posts });
+        res.status(200).json({ user: user, posts: postWithLikes });
     } catch (error) {
         console.error("Error fetching user profile:", error);
         res.status(500).json({ message: "Internal server error" });
@@ -51,7 +56,17 @@ user.get("/profile/:id", validateUserId, async (req: Request, res: Response) => 
             .select('-password -otp -__v -is_verified')
             .exec();
         const posts = await Post.find({ user: id })
-        const is_following = await Follower.find({ user: res.locals.user_id, follower: id })
+        const likedPosts = (await Like.find({
+            user: res.locals.user_id,
+            post_owner: id
+        })).map(like => like.post.toString());
+        const postWithLikes = posts.map(post => {
+            return {
+                ...post.toObject(),
+                isLiked: likedPosts.includes(post._id.toString())
+            };
+        })
+        const is_following = await Follower.find({ user: res.locals.user_id, follower: id });
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
@@ -59,7 +74,7 @@ user.get("/profile/:id", validateUserId, async (req: Request, res: Response) => 
         if (is_following.length != 0) {
             is_following_bol = true;
         }
-        res.status(200).json({ user: user, posts: posts, is_following: is_following_bol });
+        res.status(200).json({ user: user, posts: postWithLikes, is_following: is_following_bol });
     } catch (error) {
         console.error("Error fetching user profile:", error);
         res.status(500).json({ message: "Internal server error" });
@@ -209,7 +224,7 @@ user.get("/search", validateUserId, async (req: Request, res: Response) => {
 user.post("/comment", validateUserId, async (req: Request, res: Response) => {
     const { post, parent_comment, comment } = req.body;
     try {
-        const findPost: any = await Post.find({ _id: post });
+        const findPost: any = await Post.findOne({ _id: post });
         if (findPost.length !== 0) {
             const newComment = new Comment({
                 user: res.locals.user_id,
@@ -217,8 +232,11 @@ user.post("/comment", validateUserId, async (req: Request, res: Response) => {
                 ...(parent_comment && { parent_comment }),
                 comment
             })
+            await Post.findOneAndUpdate(findPost._id, { comments_count: findPost.comments_count + 1 }).exec();
             await newComment.save();
             res.status(201).json({ message: "Comment has been saved" })
+        } else {
+            res.status(404).json({ message: "Post not found" });
         }
     } catch (error) {
         console.error(error);
@@ -231,9 +249,50 @@ user.get("/comment/:id", validateUserId, async (req: Request, res: Response) => 
     try {
         const comments: any = await Comment.find({ post }).populate('user', 'username profile_img').exec()
         if (comments.length === 0) {
-            res.status(404).json({ message: "No comments found!" })
+            return res.status(200).json({ message: "No comments found!" })
         }
-        res.status(200).json(comments)
+        return res.status(200).json(comments)
+
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
+})
+
+user.post("/like", validateUserId, async (req: Request, res: Response) => {
+    const { post, post_owner } = req.body;
+    try {
+        const findPost: any = await Post.findOne({ _id: post });
+        if (findPost.length !== 0) {
+            const like = new Like({
+                user: res.locals.user_id,
+                post,
+                post_owner,
+            })
+            await like.save();
+            await Post.findOneAndUpdate(findPost._id, { likes_count: findPost.likes_count + 1 }).exec();
+            return res.status(201).json({ message: "Liked the post" })
+        }
+        return res.status(404).json({ message: "Post not found" });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
+})
+
+user.post("/unlike", validateUserId, async (req: Request, res: Response) => {
+    const { post, post_owner } = req.body;
+    try {
+        const findPost = await Post.findOne({ _id: post });
+        if (findPost) {
+            const del = await Like.findOneAndDelete({ post, post_owner });
+            await Post.findOneAndUpdate(findPost._id, { likes_count: findPost.likes_count - 1 }).exec();
+            return res.status(201).json({ message: "Unliked the post" })
+        }
+        return res.status(404).json({ message: "Post not found" })
+
     } catch (error) {
         console.error(error);
         return res.status(500).json({ message: 'Something went wrong' });
