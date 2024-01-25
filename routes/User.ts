@@ -8,10 +8,10 @@ import Post from "../models/Post";
 import Like from "../models/Like";
 import Notification from "../models/Notifications"
 import Follower from "../models/Follower"
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import Comment from "../models/Comment";
 
-
+mongoose.set('debug', true);
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, './uploads');
@@ -297,6 +297,70 @@ user.post("/unlike", validateUserId, async (req: Request, res: Response) => {
         console.error(error);
         return res.status(500).json({ message: 'Something went wrong' });
     }
+})
+
+user.get("/followers/:id", validateUserId, async (req: Request, res: Response) => {
+    const id = req.params.id;
+    try {
+        const followers: any = await Follower.find({ follower: id }).populate("user", "username name profile_img").exec();
+        if (followers.length === 0) {
+            return res.status(404).json({ message: "No followers found" })
+        }
+        return res.status(200).json(followers);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
+})
+
+user.get("/following/:id", validateUserId, async (req: Request, res: Response) => {
+    const id = req.params.id;
+    try {
+        const following: any = await Follower.find({ user: id }).populate("follower", "username name profile_img").exec();
+        if (following.length === 0) {
+            return res.status(404).json({ message: "You are not following anyone" })
+        }
+        return res.status(200).json(following);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
+})
+
+user.get("/follower/:id/search", validateUserId, async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const { query } = req.query;
+    try {
+        if (typeof query !== 'string' || query.trim() === '') {
+            return res.status(400).json({ message: 'Query parameter is missing or empty' });
+        }
+        const userId = new mongoose.Types.ObjectId(id);
+        const followers: any = await Follower.find({
+            $and: [
+                // { user: { $nin: [userId] } },
+                {
+                    $or: [
+                        { 'user.name': { $regex: query, $options: 'i' } },
+                        { 'user.username': { $regex: query, $options: 'i' } }
+                    ]
+                }
+            ]
+        })
+            .populate("user", "username name profile_img")
+            .exec();
+
+        if (followers.length === 0) {
+            return res.status(404).json({ message: "No followers found" });
+        }
+        return res.status(200).json(followers);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
+})
+
+user.get("/following/search", validateUserId, async (req: Request, res: Response) => {
+
 })
 
 
