@@ -327,40 +327,56 @@ user.get("/following/:id", validateUserId, async (req: Request, res: Response) =
     }
 })
 
-user.get("/follower/:id/search", validateUserId, async (req: Request, res: Response) => {
+user.get("/followers/:id/search", validateUserId, async (req: Request, res: Response) => {
     const id = req.params.id;
     const { query } = req.query;
     try {
         if (typeof query !== 'string' || query.trim() === '') {
             return res.status(400).json({ message: 'Query parameter is missing or empty' });
         }
-        const userId = new mongoose.Types.ObjectId(id);
-        const followers: any = await Follower.find({
-            $and: [
-                // { user: { $nin: [userId] } },
-                {
-                    $or: [
-                        { 'user.name': { $regex: query, $options: 'i' } },
-                        { 'user.username': { $regex: query, $options: 'i' } }
-                    ]
-                }
-            ]
-        })
-            .populate("user", "username name profile_img")
-            .exec();
-
+        const followers: any = await Follower.find({ follower: id })
+            .populate("user", "username name profile_img").exec();
         if (followers.length === 0) {
             return res.status(404).json({ message: "No followers found" });
         }
-        return res.status(200).json(followers);
+        const filteredFollowers = followers.filter((follower: any) => {
+            const username = follower.user.username.toLowerCase();
+            return username.includes(query.toLowerCase());
+        });
+        if (filteredFollowers.length === 0) {
+            return res.status(404).json({ message: `No followers found with the username containing '${query}'` });
+        }
+        return res.status(200).json(filteredFollowers);
     } catch (error) {
         console.error(error);
         return res.status(500).json({ message: 'Something went wrong' });
     }
 })
 
-user.get("/following/search", validateUserId, async (req: Request, res: Response) => {
-
+user.get("/following/:id/search", validateUserId, async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const { query } = req.query;
+    try {
+        if (typeof query !== 'string' || query.trim() === '') {
+            return res.status(400).json({ message: 'Query parameter is missing or empty' });
+        }
+        const followers: any = await Follower.find({ user: id })
+            .populate("follower", "username name profile_img").exec();
+        if (followers.length === 0) {
+            return res.status(404).json({ message: "No followers found" });
+        }
+        const filteredFollowers = followers.filter((follower: any) => {
+            const username = follower.follower.username.toLowerCase();
+            return username.includes(query.toLowerCase());
+        });
+        if (filteredFollowers.length === 0) {
+            return res.status(404).json({ message: `No followers found with the username containing '${query}'` });
+        }
+        return res.status(200).json(filteredFollowers);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Something went wrong' });
+    }
 })
 
 
